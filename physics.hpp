@@ -27,6 +27,7 @@ struct Ball {
     Vec3  color{1, 1, 1};
     float radius = 1.125f;
     float mass   = 6.0f;
+    int   number   = 0;               // 0=cue, 1-7=solid, 8=eight, 9-15=stripe
     bool  pocketed = false;
     bool  frozen   = false;          // skip physics (ball-in-hand placement)
     enum Type { CUE, EIGHT, SOLID, STRIPE } type = SOLID;

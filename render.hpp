@@ -14,7 +14,32 @@ namespace Render {
 
 constexpr float PI = 3.14159265358979f;
 
-static GLuint g_eightTex = 0;
+// g_glyphTex[n] = alpha texture for ball number n  (0 unused / cue, 1-15 numbered)
+static GLuint g_glyphTex[16] = {};
+
+// Ball colours indexed by number. Stripes 9-15 share hues with solids 1-7.
+static const Vec3 kBallColors[16] = {
+    {0.95f, 0.95f, 0.92f},  //  0 cue  (unused here — cue is drawn separately)
+    {0.95f, 0.85f, 0.05f},  //  1 yellow
+    {0.10f, 0.20f, 0.82f},  //  2 blue
+    {0.85f, 0.10f, 0.10f},  //  3 red
+    {0.55f, 0.08f, 0.65f},  //  4 purple
+    {0.92f, 0.45f, 0.04f},  //  5 orange
+    {0.05f, 0.50f, 0.15f},  //  6 green
+    {0.52f, 0.08f, 0.12f},  //  7 maroon
+    {0.02f, 0.02f, 0.02f},  //  8 black
+    {0.95f, 0.85f, 0.05f},  //  9 yellow stripe
+    {0.10f, 0.20f, 0.82f},  // 10 blue stripe
+    {0.85f, 0.10f, 0.10f},  // 11 red stripe
+    {0.55f, 0.08f, 0.65f},  // 12 purple stripe
+    {0.92f, 0.45f, 0.04f},  // 13 orange stripe
+    {0.05f, 0.50f, 0.15f},  // 14 green stripe
+    {0.52f, 0.08f, 0.12f},  // 15 maroon stripe
+};
+
+inline Vec3 getBallColor(int n) {
+    return (n >= 0 && n <= 15) ? kBallColors[n] : Vec3{1,1,1};
+}
 
 inline void init() {
     Text::init({
@@ -22,11 +47,20 @@ inline void init() {
         "/System/Library/Fonts/Helvetica.ttc",
         "/System/Library/Fonts/Geneva.ttf"
     });
-    g_eightTex = Text::makeGlyphTex('8', 128);
+    // Ball 8: use single-glyph path for best vertical centring.
+    g_glyphTex[8] = Text::makeGlyphTex('8', 128);
+    // All other numbered balls: use string path (handles 1-9 and 10-15 uniformly).
+    char buf[4];
+    for (int i = 1; i <= 15; i++) {
+        if (i == 8) continue;
+        snprintf(buf, sizeof(buf), "%d", i);
+        g_glyphTex[i] = Text::makeStringTex(buf, 128);
+    }
 }
 
 inline void shutdown() {
-    if (g_eightTex) { glDeleteTextures(1, &g_eightTex); g_eightTex = 0; }
+    for (int i = 0; i < 16; i++)
+        if (g_glyphTex[i]) { glDeleteTextures(1, &g_glyphTex[i]); g_glyphTex[i] = 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +191,42 @@ inline void drawSphereDot(float r, float nx, float ny, float nz, float capAngle)
 }
 
 
+// Horizontal stripe band between two latitude angles (radians from equator).
+// Multiple stacks keep each flat quad close to the sphere surface so the white
+// base ball cannot poke through the band interior.
+inline void drawLatitudeBand(float r, float lat0, float lat1,
+                             int stacks = 8, int slices = 48) {
+    for (int i = 0; i < stacks; i++) {
+        float la0 = lat0 + (lat1 - lat0) *  i      / stacks;
+        float la1 = lat0 + (lat1 - lat0) * (i + 1) / stacks;
+        float y0 = std::sin(la0), c0 = std::cos(la0);
+        float y1 = std::sin(la1), c1 = std::cos(la1);
+        glBegin(GL_QUAD_STRIP);
+        for (int j = 0; j <= slices; j++) {
+            float lo = 2.f * PI * j / slices;
+            float x = std::cos(lo), z = std::sin(lo);
+            glNormal3f(x*c0, y0, z*c0); glVertex3f(r*x*c0, r*y0, r*z*c0);
+            glNormal3f(x*c1, y1, z*c1); glVertex3f(r*x*c1, r*y1, r*z*c1);
+        }
+        glEnd();
+    }
+}
+
+// White cap + number glyph on the current pole (+Z in caller's matrix).
+// Call twice — second time with glRotatef(180,0,1,0) for the opposite pole.
+inline void drawBallNumber(float r, GLuint tex, float capAngle = 0.46f) {
+    float rCap   = r + 0.04f;
+    float rGlyph = r + 0.06f;
+    glColor3f(1.f, 1.f, 1.f);
+    drawSphericalCap(rCap, capAngle);
+    if (tex) {
+        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor3f(0.f, 0.f, 0.f);
+        drawSphericalCapTextured(tex, rGlyph, capAngle);
+        glDisable(GL_BLEND);
+    }
+}
+
 inline void applyBallTransform(const Ball& b) {
     glTranslatef(b.pos.x, b.pos.y, b.pos.z);
     float R[16] = {
@@ -213,7 +283,7 @@ inline void drawEightBall(const Ball& b) {
 
         glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glColor3f(0.f, 0.f, 0.f);
-        drawSphericalCapTextured(g_eightTex, rGlyph, capAngle);
+        drawSphericalCapTextured(g_glyphTex[8], rGlyph, capAngle);
         glDisable(GL_BLEND);
 
         glPopMatrix();
@@ -221,6 +291,57 @@ inline void drawEightBall(const Ball& b) {
 
     glEnable(GL_LIGHTING);
     glPopMatrix();
+}
+
+inline void drawSolidBall(const Ball& b) {
+    if (b.pocketed) return;
+    glPushMatrix(); applyBallTransform(b);
+    Vec3 c = getBallColor(b.number);
+    glColor3f(c.x, c.y, c.z);
+    drawSphere(b.radius);
+    glDisable(GL_LIGHTING);
+    GLuint tex = (b.number >= 1 && b.number <= 15) ? g_glyphTex[b.number] : 0;
+    for (int side = 0; side < 2; side++) {
+        glPushMatrix();
+        if (side) glRotatef(180.f, 0.f, 1.f, 0.f);
+        drawBallNumber(b.radius, tex);
+        glPopMatrix();
+    }
+    glEnable(GL_LIGHTING);
+    glPopMatrix();
+}
+
+inline void drawStripeBall(const Ball& b) {
+    if (b.pocketed) return;
+    glPushMatrix(); applyBallTransform(b);
+    // White base
+    glColor3f(0.97f, 0.97f, 0.95f);
+    drawSphere(b.radius);
+    glDisable(GL_LIGHTING);
+    // Coloured equatorial band slightly above surface
+    Vec3 c = getBallColor(b.number);
+    glColor3f(c.x, c.y, c.z);
+    drawLatitudeBand(b.radius + 0.03f, -PI / 5.f, PI / 5.f);
+    // Number caps on both poles
+    GLuint tex = (b.number >= 1 && b.number <= 15) ? g_glyphTex[b.number] : 0;
+    for (int side = 0; side < 2; side++) {
+        glPushMatrix();
+        if (side) glRotatef(180.f, 0.f, 1.f, 0.f);
+        drawBallNumber(b.radius, tex);
+        glPopMatrix();
+    }
+    glEnable(GL_LIGHTING);
+    glPopMatrix();
+}
+
+inline void drawBall(const Ball& b) {
+    if (b.pocketed) return;
+    switch (b.type) {
+        case Ball::CUE:    drawCueBall(b);    break;
+        case Ball::EIGHT:  drawEightBall(b);  break;
+        case Ball::SOLID:  drawSolidBall(b);  break;
+        case Ball::STRIPE: drawStripeBall(b); break;
+    }
 }
 
 // ---------------------------------------------------------------------------

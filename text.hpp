@@ -97,6 +97,76 @@ inline GLuint makeGlyphTex(char ch, int texSize = 128) {
 }
 
 // ---------------------------------------------------------------------------
+// Rasterize an entire string (e.g. "10") centred in a texSize×texSize alpha texture.
+// Handles single- and multi-character labels for ball numbers 1-15.
+inline GLuint makeStringTex(const char* str, int texSize = 128) {
+    if (!g_ready || !str || !*str) return 0;
+
+    // First pass: measure at a trial scale so we can fit the string.
+    float scale = stbtt_ScaleForPixelHeight(&g_font, texSize * 0.68f);
+
+    auto measureW = [&]() {
+        int w = 0;
+        for (const char* p = str; *p; p++) {
+            int adv, lsb;
+            stbtt_GetCodepointHMetrics(&g_font, *p, &adv, &lsb);
+            w += (int)(adv * scale);
+            if (*(p+1)) w += (int)(stbtt_GetCodepointKernAdvance(&g_font, *p, *(p+1)) * scale);
+        }
+        return w;
+    };
+
+    int tw = measureW();
+    if (tw > texSize * 0.82f)          // shrink scale if string too wide
+        scale *= (texSize * 0.82f) / (float)tw;
+
+    // Second pass: measure again at final scale for accurate centering.
+    tw = measureW();
+
+    int ascent, descent, lineGap;
+    stbtt_GetFontVMetrics(&g_font, &ascent, &descent, &lineGap);
+    int fontH  = (int)((ascent - descent) * scale);
+    int startX = (texSize - tw)    / 2;
+    int startY = (texSize - fontH) / 2;
+    float baseline = (float)(startY + ascent * scale);
+
+    std::vector<unsigned char> tex(texSize * texSize, 0);
+    float cx = (float)startX;
+    for (const char* p = str; *p; p++) {
+        int bx0, by0, bx1, by1;
+        stbtt_GetCodepointBitmapBox(&g_font, *p, scale, scale, &bx0, &by0, &bx1, &by1);
+        int gw = bx1 - bx0, gh = by1 - by0;
+        if (gw > 0 && gh > 0) {
+            std::vector<unsigned char> bm(gw * gh);
+            stbtt_MakeCodepointBitmap(&g_font, bm.data(), gw, gh, gw, scale, scale, *p);
+            int dstX = (int)(cx + bx0), dstY = (int)(baseline + by0);
+            for (int row = 0; row < gh; row++)
+                for (int col = 0; col < gw; col++) {
+                    int px = dstX + col, py = dstY + row;
+                    if (px >= 0 && px < texSize && py >= 0 && py < texSize)
+                        tex[py * texSize + px] = bm[row * gw + col];
+                }
+        }
+        int adv, lsb;
+        stbtt_GetCodepointHMetrics(&g_font, *p, &adv, &lsb);
+        cx += adv * scale;
+        if (*(p+1)) cx += stbtt_GetCodepointKernAdvance(&g_font, *p, *(p+1)) * scale;
+    }
+
+    GLuint id;
+    glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_2D, id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, texSize, texSize, 0,
+                 GL_ALPHA, GL_UNSIGNED_BYTE, tex.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return id;
+}
+
+// ---------------------------------------------------------------------------
 // Draw a glyph texture as a quad centred at origin in the current matrix.
 // w, h: world-space size of the quad.
 // Call with lighting OFF, blending ON, color set to desired glyph color.

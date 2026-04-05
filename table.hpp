@@ -28,8 +28,26 @@ namespace Table {
     constexpr float JAW_LEN    = 2.5f;
     constexpr float SIDE_JAW_ANGLE = 12.0f * 3.14159265f / 180.0f; // from perpendicular
 
-    inline Vec3 cueBallStart()   { return {0, BALL_RADIUS, -HALF_L / 2.0f}; }
-    inline Vec3 eightBallStart() { return {0, BALL_RADIUS,  HALF_L / 4.0f}; }
+    inline Vec3 cueBallStart() { return {0, BALL_RADIUS, -HALF_L / 2.0f}; }
+
+    // 15 rack positions in a close-packed triangle.
+    // Index 4  = centre of row 2 → always the 8-ball.
+    // Indices 10 & 14 = back corners of row 4 (one solid, one stripe).
+    // Apex (index 0) sits on the foot spot at z = +HALF_L/2.
+    inline std::vector<Vec3> getRackPositions() {
+        std::vector<Vec3> pos;
+        pos.reserve(15);
+        const float D    = BALL_DIAMETER;
+        const float rowH = D * 0.8660254f;      // D * sqrt(3)/2
+        const float z0   = HALF_L / 2.0f;       // foot spot, +25 inches from centre
+        for (int row = 0; row < 5; row++) {
+            float z       = z0 + row * rowH;
+            float x_start = -(row * D / 2.0f);
+            for (int col = 0; col <= row; col++)
+                pos.push_back({x_start + col * D, BALL_RADIUS, z});
+        }
+        return pos;
+    }
 
     // -----------------------------------------------------------------------
     // Build cushion segments: 6 main rails + 8 corner jaws + 4 side jaws = 18
