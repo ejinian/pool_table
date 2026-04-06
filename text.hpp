@@ -1,8 +1,12 @@
 #ifndef TEXT_HPP
 #define TEXT_HPP
 
-#define GL_SILENCE_DEPRECATION
-#include <OpenGL/gl.h>
+#ifdef __APPLE__
+#  define GL_SILENCE_DEPRECATION
+#  include <OpenGL/gl.h>
+#else
+#  include <GL/gl.h>
+#endif
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"

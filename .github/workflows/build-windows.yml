@@ -1,0 +1,33 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw
+
+      - name: Build
+        run: |
+          g++ -std=c++17 -O2 main.cpp -o pool_table.exe \
+            -lglfw3 -lopengl32 -lgdi32 -luser32 -lshell32 \
+            -static -static-libgcc -static-libstdc++
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pool_table-windows
+          path: pool_table.exe

@@ -1,8 +1,12 @@
 #ifndef RENDER_HPP
 #define RENDER_HPP
 
-#define GL_SILENCE_DEPRECATION
-#include <OpenGL/gl.h>
+#ifdef __APPLE__
+#  define GL_SILENCE_DEPRECATION
+#  include <OpenGL/gl.h>
+#else
+#  include <GL/gl.h>
+#endif
 #include <cmath>
 #include <vector>
 #include "vec3.hpp"
@@ -47,9 +51,14 @@ inline Vec3 getBallColor(int n) {
 
 inline void init() {
     Text::init({
+        // macOS
         "/System/Library/Fonts/HelveticaNeue.ttc",
         "/System/Library/Fonts/Helvetica.ttc",
-        "/System/Library/Fonts/Geneva.ttf"
+        "/System/Library/Fonts/Geneva.ttf",
+        // Windows
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/calibri.ttf",
+        "C:/Windows/Fonts/tahoma.ttf",
     });
     // Ball 8: use single-glyph path for best vertical centring.
     g_glyphTex[8] = Text::makeGlyphTex('8', 128);
