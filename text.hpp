@@ -167,6 +167,83 @@ inline GLuint makeStringTex(const char* str, int texSize = 128) {
 }
 
 // ---------------------------------------------------------------------------
+// Rasterize a string into a width-fitted RGBA texture of height texH.
+// The bitmap is flipped vertically before upload so (s=0,t=0)=bottom-left
+// in GL space — standard UV mapping renders it right-side up without tricks.
+// outW receives the texture width in pixels.
+inline GLuint makeLineTex(const char* str, int texH, int* outW) {
+    if (!g_ready || !str || !*str) { if (outW) *outW = 0; return 0; }
+
+    float scale = stbtt_ScaleForPixelHeight(&g_font, texH * 0.75f);
+
+    // Measure advance width
+    int tw = 0;
+    for (const char* p = str; *p; p++) {
+        int adv, lsb;
+        stbtt_GetCodepointHMetrics(&g_font, *p, &adv, &lsb);
+        tw += (int)(adv * scale + 0.5f);
+        if (*(p+1)) tw += (int)(stbtt_GetCodepointKernAdvance(&g_font, *p, *(p+1)) * scale + 0.5f);
+    }
+    int texW = tw + 8;
+    if (outW) *outW = texW;
+
+    // Rasterize top-down into RGBA (white glyph, alpha from stb)
+    std::vector<unsigned char> buf(texW * texH * 4, 0);
+    int ascent, descent, lineGap;
+    stbtt_GetFontVMetrics(&g_font, &ascent, &descent, &lineGap);
+    int fontH    = (int)((ascent - descent) * scale);
+    float baseline = (float)((texH - fontH) / 2) + ascent * scale;
+
+    float cx = 4.0f;
+    for (const char* p = str; *p; p++) {
+        int bx0, by0, bx1, by1;
+        stbtt_GetCodepointBitmapBox(&g_font, *p, scale, scale, &bx0, &by0, &bx1, &by1);
+        int gw = bx1 - bx0, gh = by1 - by0;
+        if (gw > 0 && gh > 0) {
+            std::vector<unsigned char> bm(gw * gh);
+            stbtt_MakeCodepointBitmap(&g_font, bm.data(), gw, gh, gw, scale, scale, *p);
+            int dx = (int)(cx + bx0), dy = (int)(baseline + by0);
+            for (int r = 0; r < gh; ++r) {
+                for (int c = 0; c < gw; ++c) {
+                    int px = dx + c, py = dy + r;
+                    if (px >= 0 && px < texW && py >= 0 && py < texH) {
+                        int i = (py * texW + px) * 4;
+                        buf[i]   = 255;
+                        buf[i+1] = 255;
+                        buf[i+2] = 255;
+                        buf[i+3] = bm[r * gw + c];
+                    }
+                }
+            }
+        }
+        int adv, lsb;
+        stbtt_GetCodepointHMetrics(&g_font, *p, &adv, &lsb);
+        cx += adv * scale;
+        if (*(p+1)) cx += stbtt_GetCodepointKernAdvance(&g_font, *p, *(p+1)) * scale;
+    }
+
+    // Flip rows vertically: makes GL t=0 (first uploaded row) the image bottom,
+    // so standard UV (0,0)=bottom-left renders text right-side up.
+    for (int r = 0; r < texH / 2; ++r) {
+        int m = texH - 1 - r;
+        for (int c = 0; c < texW * 4; ++c)
+            std::swap(buf[r * texW * 4 + c], buf[m * texW * 4 + c]);
+    }
+
+    GLuint id;
+    glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_2D, id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return id;
+}
+
+// ---------------------------------------------------------------------------
 // Draw a glyph texture as a quad centred at origin in the current matrix.
 // w, h: world-space size of the quad.
 // Call with lighting OFF, blending ON, color set to desired glyph color.
@@ -224,11 +301,13 @@ inline void drawString(const char* str, float x, float y, float pixH) {
 
             float gx = cx + bx0;
             float gy = baseline + by0;
+            // stb row-0 = glyph top; glTexImage2D row-0 = texture bottom (t=0).
+            // Flip t so the glyph renders right-side-up in y-up HUD space.
             glBegin(GL_QUADS);
-            glTexCoord2f(0,0); glVertex2f(gx,      gy);
-            glTexCoord2f(1,0); glVertex2f(gx + gw, gy);
-            glTexCoord2f(1,1); glVertex2f(gx + gw, gy + gh);
-            glTexCoord2f(0,1); glVertex2f(gx,      gy + gh);
+            glTexCoord2f(0,1); glVertex2f(gx,      gy);
+            glTexCoord2f(1,1); glVertex2f(gx + gw, gy);
+            glTexCoord2f(1,0); glVertex2f(gx + gw, gy + gh);
+            glTexCoord2f(0,0); glVertex2f(gx,      gy + gh);
             glEnd();
 
             glDeleteTextures(1, &id);

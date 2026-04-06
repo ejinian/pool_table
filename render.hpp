@@ -17,6 +17,10 @@ constexpr float PI = 3.14159265358979f;
 // g_glyphTex[n] = alpha texture for ball number n  (0 unused / cue, 1-15 numbered)
 static GLuint g_glyphTex[16] = {};
 
+// Pre-baked HUD control-help lines (one RGBA texture per line, created at init).
+struct CtrlLine { GLuint tex = 0; int texW = 0, texH = 0; };
+static CtrlLine g_ctrl[7];
+
 // Ball colours indexed by number. Stripes 9-15 share hues with solids 1-7.
 static const Vec3 kBallColors[16] = {
     {0.95f, 0.95f, 0.92f},  //  0 cue  (unused here — cue is drawn separately)
@@ -56,11 +60,31 @@ inline void init() {
         snprintf(buf, sizeof(buf), "%d", i);
         g_glyphTex[i] = Text::makeStringTex(buf, 128);
     }
+
+    // Pre-bake control-help overlay (avoids per-frame texture churn).
+    static const char* kCtrl[7] = {
+        "E - pick up / place cue ball",
+        "WASD - move ball  |  pan camera",
+        "Up Arrow / Down Arrow - shot power",
+        "Q - spin editor  (WASD adjusts)",
+        "Enter - shoot",
+        "R - reset",
+        "Esc - quit",
+    };
+    const int kTexH = 48;
+    for (int i = 0; i < 7; i++) {
+        int tw = 0;
+        g_ctrl[i].tex  = Text::makeLineTex(kCtrl[i], kTexH, &tw);
+        g_ctrl[i].texW = tw;
+        g_ctrl[i].texH = kTexH;
+    }
 }
 
 inline void shutdown() {
     for (int i = 0; i < 16; i++)
         if (g_glyphTex[i]) { glDeleteTextures(1, &g_glyphTex[i]); g_glyphTex[i] = 0; }
+    for (auto& cl : g_ctrl)
+        if (cl.tex) { glDeleteTextures(1, &cl.tex); cl.tex = 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +444,38 @@ inline void drawTable(const std::vector<CushionSeg>& segs,
     glVertex3f(-iw,rh,-il);glVertex3f(-ow,rh,-ol);glVertex3f(ow,rh,-ol);glVertex3f(iw,rh,-il);
     glVertex3f(-iw,rh,il);glVertex3f(iw,rh,il);glVertex3f(ow,rh,ol);glVertex3f(-ow,rh,ol);
     glEnd();
+}
+
+// Control-help overlay — drawn inside beginHUD / endHUD.
+// Uses pre-baked RGBA textures (no per-frame texture creation).
+// Control-help overlay — top-right corner, lines stacked downward, right-aligned.
+inline void drawControls(int w, int h) {
+    const float pixH   = 48.f;
+    const float step   = 56.f;
+    const float margin = 20.f;
+
+    glEnable(GL_TEXTURE_2D);
+    glColor4f(0.85f, 0.85f, 0.83f, 1.0f);
+
+    for (int i = 0; i < 7; i++) {
+        const CtrlLine& c = g_ctrl[i];
+        if (!c.tex) continue;
+        float sw = pixH * (float)c.texW / (float)c.texH;
+        // Right-align: right edge flush with window margin
+        float x = (float)w - margin - sw;
+        // Top-down: line 0 sits just below the top margin
+        float y = (float)h - margin - pixH - i * step;
+        glBindTexture(GL_TEXTURE_2D, c.tex);
+        glBegin(GL_QUADS);
+        glTexCoord2f(0, 0); glVertex2f(x,      y);
+        glTexCoord2f(1, 0); glVertex2f(x + sw, y);
+        glTexCoord2f(1, 1); glVertex2f(x + sw, y + pixH);
+        glTexCoord2f(0, 1); glVertex2f(x,      y + pixH);
+        glEnd();
+    }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
 }
 
 // ---------------------------------------------------------------------------

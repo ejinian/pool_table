@@ -161,9 +161,24 @@ static bool   dragging = false;
 
 void cursorCallback(GLFWwindow*, double x, double y) {
     if (dragging) {
+        // Keep the eye position fixed; pivot the look direction in place.
+        Vec3 fwd{
+            std::cos(cam.pitch) * std::sin(cam.yaw),
+            std::sin(cam.pitch),
+            std::cos(cam.pitch) * std::cos(cam.yaw)
+        };
+        Vec3 eye = cam.target + fwd * cam.dist;
+
         cam.yaw   += (float)(x - lastMouseX) * 0.005f;
         cam.pitch += (float)(y - lastMouseY) * 0.005f;
-        cam.pitch  = std::clamp(cam.pitch, 0.1f, 1.5f);
+        cam.pitch  = std::clamp(cam.pitch, 0.05f, 1.5f);
+
+        Vec3 newFwd{
+            std::cos(cam.pitch) * std::sin(cam.yaw),
+            std::sin(cam.pitch),
+            std::cos(cam.pitch) * std::cos(cam.yaw)
+        };
+        cam.target = eye - newFwd * cam.dist;
     }
     lastMouseX = x; lastMouseY = y;
 }
@@ -200,15 +215,6 @@ int main() {
     Render::init();
 
     Game game; game.buildTable(); game.reset();
-
-    printf("\n=== Pool Table Physics ===\n");
-    printf("[CONTROLS]\n");
-    printf("  Mouse-drag  orbit / aim       Scroll  zoom\n");
-    printf("  Up / Down   shot power (hold)\n");
-    printf("  Q           toggle tip-offset (spin) editor\n");
-    printf("  E           ball-in-hand (levitate / place cue)\n");
-    printf("  WASD        move dot (spin-edit) | move cue (levitating) | pan camera\n");
-    printf("  Enter       shoot              R reset   Esc quit\n\n");
 
     using Clock = std::chrono::high_resolution_clock;
     auto lastTime = Clock::now(); double accumulator = 0;
@@ -355,6 +361,7 @@ int main() {
         Render::beginHUD(w, h);
         Render::drawStrengthBar(power01);
         Render::drawSpinDiagram(tipX, tipY, spinEdit);
+        Render::drawControls(w, h);
         Render::endHUD();
 
         char title[160];
