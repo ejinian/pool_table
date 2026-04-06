@@ -314,6 +314,10 @@ int main() {
             float mv = 30.0f * (float)frameDt;
             if (wK) cam.target += aimDir * mv; if (sK) cam.target -= aimDir * mv;
             if (dK) cam.target += rgtDir * mv; if (aK) cam.target -= rgtDir * mv;
+            bool spaceK = glfwGetKey(window, GLFW_KEY_SPACE)      == GLFW_PRESS;
+            bool shiftK = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+            if (spaceK) cam.target.y += mv;
+            if (shiftK) cam.target.y -= mv;
         }
 
         // --- Enter: shoot ---
